@@ -11,11 +11,12 @@ module Models
   end
 
   class Entry
-    attr_reader :document, :term_freq
+    attr_reader :document, :term_freq, :term_count
 
-    def initialize(document:, term_freq:)
+    def initialize(document:, term_freq:, term_count:)
       @document = document
       @term_freq = term_freq
+      @term_count = term_count
     end
   end
 end
@@ -100,8 +101,10 @@ class Commands
           body: file_contents,
         )
 
+        $stdout.puts("INFO: indexing #{file_path.dump}")
         index.add(document)
       end
+      $stdout.puts('INFO: done')
     end
   end
 
@@ -127,23 +130,17 @@ class Commands
       results
     end
 
-    # TODO: cache `sum`
     def tf(entry, term)
-      count = entry.term_freq[term]
-      sum = entry.term_freq.values.sum
-
-      count.to_f / sum
+      entry.term_freq.fetch(term, 0).to_f / entry.term_count
     end
 
-    # TODO: cache `count`
     def idf(index, term)
-      total = index.entries.count
-      count = index.entries.count { |entry| entry.term_freq.key?(term) }
+      count = index.entry_freq.fetch(term, 0)
 
       if count.zero?
         0.0
       else
-        Math.log2(total.to_f / count)
+        Math.log2(index.entries.count.to_f / count)
       end
     end
 
@@ -155,12 +152,13 @@ end
 
 module Repositories
   class Index
-    attr_reader :entries
+    attr_reader :entries, :entry_freq
 
     def initialize(tokenize:)
       @tokenize = tokenize
 
       @entries = []
+      @entry_freq = {}
     end
 
     def add(document)
@@ -170,12 +168,17 @@ module Repositories
         Models::Entry.new(
           document: document,
           term_freq: term_freq,
+          term_count: term_freq.sum { |_, freq| freq },
         )
       )
+
+      term_freq.each do |term, _|
+        @entry_freq[term] ||= 0
+        @entry_freq[term] += 1
+      end
     end
   end
 end
-
 
 # ------------------------------------------------------------------------------
 tokenize = Commands::Tokenize.new
