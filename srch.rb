@@ -107,47 +107,6 @@ class Commands
       $stdout.puts('INFO: done')
     end
   end
-
-  class Search
-    def initialize(tokenize:)
-      @tokenize = tokenize
-    end
-
-    def call(index, query)
-      query_terms = @tokenize.call(query).to_a
-
-      results = index.entries.map do |entry|
-        rank = query_terms.sum do |term|
-          tf_idf(index, entry, term)
-        end
-
-        [rank, entry.document.id]
-      end
-
-      results.sort!
-      results.reverse!
-
-      results
-    end
-
-    def tf(entry, term)
-      entry.term_freq.fetch(term, 0).to_f / entry.term_count
-    end
-
-    def idf(index, term)
-      count = index.entry_freq.fetch(term, 0)
-
-      if count.zero?
-        0.0
-      else
-        Math.log2(index.entries.count.to_f / count)
-      end
-    end
-
-    def tf_idf(index, entry, term)
-      tf(entry, term) * idf(index, term)
-    end
-  end
 end
 
 module Repositories
@@ -177,6 +136,43 @@ module Repositories
         @entry_freq[term] += 1
       end
     end
+
+    def search(query)
+      query_terms = @tokenize.call(query).to_a
+
+      results = entries.map do |entry|
+        rank = query_terms.sum do |term|
+          tf_idf(entry, term)
+        end
+
+        [rank, entry.document.id]
+      end
+
+      results.sort!
+      results.reverse!
+
+      results
+    end
+
+    private
+
+    def tf(entry, term)
+      entry.term_freq.fetch(term, 0).to_f / entry.term_count
+    end
+
+    def idf(term)
+      count = entry_freq.fetch(term, 0)
+
+      if count.zero?
+        0.0
+      else
+        Math.log2(entries.count.to_f / count)
+      end
+    end
+
+    def tf_idf(entry, term)
+      tf(entry, term) * idf(term)
+    end
   end
 end
 
@@ -186,9 +182,6 @@ index = Repositories::Index.new(
   tokenize: tokenize,
 )
 index_directory = Commands::IndexDirectory.new
-search = Commands::Search.new(
-  tokenize: tokenize,
-)
 
 index_directory.call(index, 'texts/*.txt')
 
@@ -200,5 +193,5 @@ loop do
 
   break unless query
 
-  pp search.call(index, query)
+  pp index.search(query)
 end
